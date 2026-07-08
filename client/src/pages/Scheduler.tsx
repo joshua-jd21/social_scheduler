@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarClock,
   CheckCircle2,
@@ -38,9 +38,19 @@ const Scheduler = () => {
   const [scheduledTime, setScheduledTime] = useState("10:30");
   const [mediaName, setMediaName] = useState("");
   const [isScheduling, setIsScheduling] = useState(false);
+  const [scheduleError, setScheduleError] = useState("");
+  const timeoutRef = useRef<number | null>(null);
   const [posts, setPosts] = useState<ScheduledPost[]>(
     dummyPostsData.slice(0, 6)
   );
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   const scheduledPosts = useMemo(
     () => posts.filter((post) => post.status === "scheduled"),
@@ -62,12 +72,22 @@ const Scheduler = () => {
 
   const handleSchedule = () => {
     if (!content.trim() || selectedPlatforms.length === 0) return;
+    if (!scheduledDate || !scheduledTime) {
+      setScheduleError("Choose both a date and time before scheduling.");
+      return;
+    }
 
+    const parsedDate = new Date(`${scheduledDate}T${scheduledTime}:00`);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      setScheduleError("Choose a valid date and time before scheduling.");
+      return;
+    }
+
+    setScheduleError("");
     setIsScheduling(true);
-    window.setTimeout(() => {
-      const scheduledFor = new Date(
-        `${scheduledDate}T${scheduledTime}:00`
-      ).toISOString();
+    timeoutRef.current = window.setTimeout(() => {
+      const scheduledFor = parsedDate.toISOString();
 
       setPosts((current) => [
         {
@@ -81,6 +101,7 @@ const Scheduler = () => {
         ...current,
       ]);
       setIsScheduling(false);
+      timeoutRef.current = null;
     }, 700);
   };
 
@@ -201,7 +222,10 @@ const Scheduler = () => {
               <input
                 type="date"
                 value={scheduledDate}
-                onChange={(event) => setScheduledDate(event.target.value)}
+                onChange={(event) => {
+                  setScheduledDate(event.target.value);
+                  setScheduleError("");
+                }}
                 className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-red-300 focus:ring-4 focus:ring-red-100"
               />
             </div>
@@ -212,11 +236,20 @@ const Scheduler = () => {
               <input
                 type="time"
                 value={scheduledTime}
-                onChange={(event) => setScheduledTime(event.target.value)}
+                onChange={(event) => {
+                  setScheduledTime(event.target.value);
+                  setScheduleError("");
+                }}
                 className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-red-300 focus:ring-4 focus:ring-red-100"
               />
             </div>
           </div>
+
+          {scheduleError && (
+            <p className="mt-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
+              {scheduleError}
+            </p>
+          )}
 
           <div className="mt-6">
             <label className="text-sm font-medium text-slate-700">
@@ -246,7 +279,9 @@ const Scheduler = () => {
             disabled={
               isScheduling ||
               !content.trim() ||
-              selectedPlatforms.length === 0
+              selectedPlatforms.length === 0 ||
+              !scheduledDate ||
+              !scheduledTime
             }
             className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full bg-red-500 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-red-600 disabled:opacity-60 sm:w-auto"
           >
@@ -282,7 +317,9 @@ const Scheduler = () => {
                 </p>
                 <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-500">
                   <Clock className="h-4 w-4" />
-                  {scheduledDate} at {scheduledTime}
+                  {scheduledDate && scheduledTime
+                    ? `${scheduledDate} at ${scheduledTime}`
+                    : "Choose date and time"}
                 </div>
               </div>
             </div>
