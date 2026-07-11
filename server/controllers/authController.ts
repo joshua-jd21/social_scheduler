@@ -3,12 +3,18 @@ import { User } from "../models/User.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
 const generateToken = (id: string) => {
-  return jwt.sign(
-    { id },
-    process.env.JWT_SECRET || "fallback_secret",
-    { expiresIn: "30d" }
-  );
+  const jwtSecret = process.env.JWT_SECRET;
+
+  if (!jwtSecret) {
+    throw new Error("JWT_SECRET is not configured");
+  }
+
+  return jwt.sign({ id }, jwtSecret, { expiresIn: "30d" });
 };
 
 // Register User
@@ -20,7 +26,34 @@ export const registerUser = async (
   try {
     const { name, email, password } = req.body;
 
-    const userExists = await User.findOne({ email });
+    if (
+      typeof name !== "string" ||
+      !name.trim() ||
+      !email ||
+      !password
+    ) {
+      res.status(400).json({
+        message: "Name, email and password are required",
+      });
+      return;
+    }
+
+    if (typeof email !== "string" || !emailRegex.test(email.trim())) {
+      res.status(400).json({
+        message: "Please provide a valid email address",
+      });
+      return;
+    }
+
+    if (typeof password !== "string" || password.length < 6) {
+      res.status(400).json({
+        message: "Password must be at least 6 characters long",
+      });
+      return;
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const userExists = await User.findOne({ email: normalizedEmail });
 
     if (userExists) {
       res.status(400).json({ message: "User already exists" });
@@ -31,8 +64,8 @@ export const registerUser = async (
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const user = await User.create({
-      name,
-      email,
+      name: name.trim(),
+      email: normalizedEmail,
       password: hashedPassword,
     });
 
@@ -64,7 +97,29 @@ export const loginUser = async (
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email });
+    if (!email || !password) {
+      res.status(400).json({
+        message: "Email and password are required",
+      });
+      return;
+    }
+
+    if (typeof email !== "string" || !emailRegex.test(email.trim())) {
+      res.status(400).json({
+        message: "Please provide a valid email address",
+      });
+      return;
+    }
+
+    if (typeof password !== "string" || password.length < 6) {
+      res.status(400).json({
+        message: "Password must be at least 6 characters long",
+      });
+      return;
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const user = await User.findOne({ email: normalizedEmail });
 
     if (user && (await bcrypt.compare(password, user.password))) {
       res.json({

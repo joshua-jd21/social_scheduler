@@ -4,26 +4,28 @@ import { User } from "../models/User.js";
 import { Account } from "../models/Account.js";
 import { AuthRequest } from "../middlewares/authMiddlewware.js";
 
-// Helper to ensure user has a Zernio Profile.
-// TODO: listProfiles() is not scoped to this user — it currently grabs
-// profiles[0] from the ENTIRE Zernio workspace, meaning multiple users
-// could get assigned the same profile. Check user.zernioProfileId in
-// Mongo first, and/or filter listProfiles() by an external/user ID if
-// the Zernio API supports it.
 const getOrCreateZernioProfile = async (user: any): Promise<string> => {
   try {
-    const result = await zernio.profiles.listProfiles();
-    const data = result.data as any;
-    const profiles: any[] = Array.isArray(data) ? data : data?.profiles || data?.data || [];
+    if (user.zernioProfileId) {
+      return user.zernioProfileId;
+    }
 
-    if (profiles.length > 0) {
-      const pid = profiles[0]._id || profiles[0].id;
-      await User.findByIdAndUpdate(user._id, { zernioProfileId: pid });
-      return pid;
+    const currentUser = await User.findById(user._id).select(
+      "name email zernioProfileId"
+    );
+
+    if (!currentUser) {
+      throw new Error("Authenticated user not found");
+    }
+
+    if (currentUser.zernioProfileId) {
+      return currentUser.zernioProfileId;
     }
 
     const createResult = await zernio.profiles.createProfile({
-      body: { name: `${user.name || user.email}'s workspace` } as any,
+      body: {
+        name: `${currentUser.name || currentUser.email}'s workspace`,
+      } as any,
     });
     const created = (createResult.data as any)?.profile || createResult.data;
 
@@ -33,7 +35,9 @@ const getOrCreateZernioProfile = async (user: any): Promise<string> => {
       throw new Error("Failed to create Zernio profile — no ID returned");
     }
 
-    await User.findByIdAndUpdate(user._id, { zernioProfileId: pid });
+    currentUser.zernioProfileId = pid;
+    await currentUser.save();
+
     return pid;
   } catch (error: any) {
     console.error("getOrCreateZernioProfile Error:", error?.message || error);
@@ -64,7 +68,9 @@ export const generateAuthUrl = async (req: AuthRequest, res: Response): Promise<
     });
 
     const data = result.data as any;
-    console.log("getConnectUrl response:", JSON.stringify(data, null, 2));
+    if (process.env.NODE_ENV === "development") {
+      console.log("Zernio connect URL generated");
+    }
 
     const authUrl = data.authUrl;
 
